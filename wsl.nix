@@ -87,6 +87,7 @@ in
     isNormalUser = true;
     uid = lib.mkDefault 1000;
     extraGroups = [ "wheel" ];
+    linger = true;
   };
   users.users.root.extraGroups = [ "root" ];
   security.sudo.wheelNeedsPassword = lib.mkDefault false;
