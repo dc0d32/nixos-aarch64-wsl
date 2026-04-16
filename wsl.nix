@@ -6,6 +6,8 @@ let
   # Init shim — WSL2 calls /sbin/init to start systemd.
   # NixOS has systemd in /nix/store, so we bridge the gap.
   initShim = pkgs.writeShellScript "wsl-init" ''
+    export PATH="${lib.makeBinPath [ pkgs.coreutils pkgs.util-linux ]}:$PATH"
+
     # Fix /dev/shm if WSL created it as a symlink
     if [ -L /dev/shm ]; then
       rm -f /dev/shm
@@ -21,8 +23,9 @@ let
     mount --bind /nix/store /nix/store
     mount -o remount,ro,bind /nix/store
 
-    # Activate NixOS (creates /run/current-system, etc.)
-    /nix/var/nix/profiles/system/activate > /dev/kmsg 2>&1 || true
+    # Create /run/current-system so systemd finds its units.
+    # Full activation runs later via nixos-activation.service.
+    ln -sfn /nix/var/nix/profiles/system /run/current-system
 
     # Hand off to real systemd
     exec /nix/var/nix/profiles/system/systemd/lib/systemd/systemd "$@"
