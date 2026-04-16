@@ -65,7 +65,7 @@
       cmp-buffer
       cmp-path
     ];
-    extraLuaConfig = ''
+    initLua = ''
       vim.o.number = true
       vim.o.relativenumber = true
       vim.o.expandtab = true
@@ -130,9 +130,9 @@
   # --- git ---
   programs.git = {
     enable = true;
-    userName = "p";
-    userEmail = "p@localhost";
-    extraConfig = {
+    settings = {
+      user.name = "p";
+      user.email = "p@localhost";
       pull.rebase = true;
       init.defaultBranch = "main";
       push.autoSetupRemote = true;
