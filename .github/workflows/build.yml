@@ -18,8 +18,12 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Install Nix
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf -L https://nixos.org/nix/install | sh -s -- --daemon --yes
+          echo "/nix/var/nix/profiles/default/bin" >> "$GITHUB_PATH"
+          sudo mkdir -p /etc/nix
+          echo "experimental-features = nix-command flakes" | sudo tee /etc/nix/nix.conf
 
       - name: Build tarball
         run: sudo nix run .#nixosConfigurations.${{ matrix.config }}.config.system.build.tarballBuilder -- nixos-${{ matrix.arch }}.wsl
