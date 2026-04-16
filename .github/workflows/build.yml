@@ -10,7 +10,7 @@ jobs:
       matrix:
         include:
           - arch: aarch64
-            runner: ubuntu-24.04-arm64
+            runner: ubuntu-24.04-arm
             config: aarch64
           - arch: x86_64
             runner: ubuntu-24.04
