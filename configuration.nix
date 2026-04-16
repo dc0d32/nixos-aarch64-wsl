@@ -5,21 +5,24 @@
     git
     curl
     wget
-    neovim
     gcc
     gnumake
     pkg-config
     ripgrep
     fd
     htop
+    tmux
     unzip
   ];
+
+  programs.zsh.enable = true;
+  users.users.${defaultUser}.shell = pkgs.zsh;
 
   nix.settings = {
     experimental-features = [ "nix-command" "flakes" ];
     trusted-users = [ "root" defaultUser ];
   };
 
-  time.timeZone = "UTC";
+  time.timeZone = "America/Los_Angeles";
   system.stateVersion = "25.11";
 }

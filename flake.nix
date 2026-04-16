@@ -1,16 +1,31 @@
 {
   description = "Minimal NixOS WSL2 image";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, home-manager }:
     let
       defaultUser = "p";
 
       mkSystem = system: nixpkgs.lib.nixosSystem {
         inherit system;
         specialArgs = { inherit defaultUser; };
-        modules = [ ./wsl.nix ./configuration.nix ];
+        modules = [
+          ./wsl.nix
+          ./configuration.nix
+          home-manager.nixosModules.home-manager
+          {
+            home-manager.useGlobalPkgs = true;
+            home-manager.useUserPackages = true;
+            home-manager.users.${defaultUser} = import ./home.nix;
+          }
+        ];
       };
     in
     {

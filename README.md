@@ -1,6 +1,6 @@
 # nixos-aarch64-wsl
 
-Minimal NixOS WSL2 image, no external dependencies beyond nixpkgs.
+Minimal NixOS WSL2 image, no external dependencies beyond nixpkgs + home-manager.
 
 ## Build
 
@@ -23,9 +23,18 @@ wsl --import NixOS $env:USERPROFILE\NixOS .\nixos.wsl
 wsl -d NixOS
 ```
 
-## Update after import
+## After import
 
 ```
-cd /mnt/q/src/nixos-aarch64-wsl
+git clone <this-repo> ~/nix
+cd ~/nix
 sudo nixos-rebuild switch --flake .#aarch64
 ```
+
+Or use the alias: `nr` (rebuilds from `~/nix`).
+
+## What's included
+
+**System:** git, curl, wget, gcc, gnumake, pkg-config, ripgrep, fd, htop, unzip
+
+**User (via home-manager):** zsh + starship, neovim (treesitter, telescope, lsp, completion), git, direnv
