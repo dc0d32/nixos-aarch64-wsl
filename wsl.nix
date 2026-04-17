@@ -6,6 +6,14 @@ let
   # Dummy ldconfig — WSL runs /sbin/ldconfig after adding GPU libs.
   # NixOS doesn't use ldconfig (it uses patchelf), so this is a no-op.
   ldconfigDummy = pkgs.writeShellScript "ldconfig" "exit 0";
+
+  # Wrapped /bin/sh — WSL runs health checks via /bin/sh that call
+  # systemctl and grep. NixOS doesn't have these in the default PATH,
+  # so we wrap sh to include them.
+  shWrapper = pkgs.writeShellScriptBin "sh" ''
+    export PATH="${lib.makeBinPath [ pkgs.systemd pkgs.gnugrep pkgs.coreutils ]}:$PATH"
+    exec ${pkgs.bashInteractive}/bin/sh "$@"
+  '';
 in
 {
   # WSL provides its own kernel and boot
@@ -50,7 +58,7 @@ in
     mkdir -p /bin
     ln -sf /init /bin/wslpath
     ln -sf ${pkgs.bashInteractive}/bin/bash /bin/bash
-    ln -sf ${pkgs.bashInteractive}/bin/bash /bin/sh
+    ln -sf ${shWrapper}/bin/sh /bin/sh
     ln -sf ${pkgs.util-linux}/bin/mount /bin/mount
     ln -sf ${pkgs.shadow}/bin/login /bin/login
   '';
@@ -129,7 +137,7 @@ in
 
       echo "Installing NixOS..."
       nixos-install --root "$root" --no-root-passwd \
-        --system ${config.system.build.toplevel} --substituters ""
+        --system ${config.system.build.toplevel}
 
       echo "Copying config to ~/nix..."
       install -d -o 1000 -g 100 "$root/home/${defaultUser}/nix"
