@@ -20,10 +20,19 @@ in
       description = "Git URL of the dotfiles/NixOS config repo to clone.";
     };
 
-    flakeRef = lib.mkOption {
+    flake = lib.mkOption {
       type = lib.types.str;
-      default = "${cloneDir}#${config.networking.hostName}";
-      description = "Flake reference passed to nixos-rebuild switch.";
+      default = cloneDir;
+      description = "Flake path/URL to build the new system from.";
+    };
+
+    host = lib.mkOption {
+      type = lib.types.str;
+      default = config.networking.hostName;
+      description = ''
+        nixosConfigurations attribute name to build, i.e. the
+        'wsl-arm' in '<flake>#nixosConfigurations.wsl-arm'.
+      '';
     };
 
     clonePath = lib.mkOption {
@@ -36,7 +45,7 @@ in
   config = lib.mkIf cfg.enable {
     # Two-phase first boot:
     # 1. Clone the dotfiles repo as the default user
-    # 2. Rebuild NixOS as root using that clone
+    # 2. Build & activate the new system as root using that clone
 
     systemd.services.wsl-first-boot-clone = {
       description = "Clone dotfiles repo (first boot, phase 1)";
@@ -84,18 +93,26 @@ in
         RemainAfterExit = true;
       };
 
-      path = [ pkgs.gitMinimal pkgs.nix pkgs.nixos-rebuild pkgs.systemd ];
+      # Intentionally NOT pulling pkgs.nixos-rebuild here: it's the
+      # python-based nixos-rebuild-ng, which would drag python3
+      # (~130 MiB) into the bootstrap closure. We do exactly what
+      # nixos-rebuild does internally: nix build the toplevel, point
+      # the system profile at it, then activate it.
+      path = [ pkgs.gitMinimal pkgs.nix pkgs.systemd ];
 
       script = ''
         set -euo pipefail
-        echo "=== WSL first-boot: rebuilding NixOS ==="
-        echo "Running: nixos-rebuild switch --flake ${cfg.flakeRef}"
+        attr="${cfg.flake}#nixosConfigurations.${cfg.host}.config.system.build.toplevel"
+        echo "=== WSL first-boot: building $attr ==="
+        system="$(nix build --no-link --print-out-paths "$attr")"
 
-        nixos-rebuild switch --flake "${cfg.flakeRef}"
+        echo "Setting system profile → $system"
+        nix-env --profile /nix/var/nix/profiles/system --set "$system"
 
-        # Mark first-boot done (owned by the user, not root)
+        echo "Activating new system..."
+        "$system/bin/switch-to-configuration" switch
+
         install -o ${user} -g users -m 644 /dev/null "${markerFile}"
-
         echo "=== First-boot provisioning complete ==="
       '';
     };

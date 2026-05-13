@@ -66,4 +66,5 @@ dotfiles repo. Subsequent updates use `nixos-rebuild switch` from
 | `wsl.firstBoot.enable` | `false` | Enable first-boot provisioning |
 | `wsl.firstBoot.repo` | `https://github.com/dc0d32/nixos.git` | Dotfiles repo URL |
 | `wsl.firstBoot.clonePath` | `~/nixos` | Clone destination |
-| `wsl.firstBoot.flakeRef` | `<clonePath>#<hostname>` | Flake ref for rebuild |
+| `wsl.firstBoot.flake` | `<clonePath>` | Flake URL/path to build |
+| `wsl.firstBoot.host` | `networking.hostName` | `nixosConfigurations.<host>` to build |
