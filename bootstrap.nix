@@ -42,5 +42,35 @@
   # Drop perl, rsync, strace from environment.defaultPackages.
   environment.defaultPackages = lib.mkForce [ ];
 
+  # Replace the perl-based NixOS activation scripts with their Rust
+  # equivalents. Together these drop perl-5.42 (~57 MiB) and the
+  # perl-env wrapper from the closure.
+  #   - userborn replaces update-users-groups.pl
+  #   - system.etc.overlay replaces setup-etc.pl
+  services.userborn.enable = true;
+  system.etc.overlay.enable = true;
+
+  # XDG defaults are useless on a headless WSL bootstrap. Together these
+  # drop shared-mime-info, glib, hicolor-icon-theme, and
+  # sound-theme-freedesktop (~25 MiB).
+  xdg.mime.enable = false;
+  xdg.icons.enable = false;
+  xdg.sounds.enable = false;
+
+  # No fonts needed in a TTY-only bootstrap (drops fontconfig +
+  # dejavu-fonts-minimal).
+  fonts.fontconfig.enable = false;
+
+  # nano isn't needed on first boot (the dotfiles repo installs an
+  # editor); dropping it removes file (~8 MiB).
+  programs.nano.enable = false;
+
+  # command-not-found needs an sqlite DB of all of nixpkgs (~5 MiB).
+  programs.command-not-found.enable = false;
+
+  # WSL has no kexec or LVM. Drops kexec-tools and lvm2 (~10 MiB).
+  boot.kexec.enable = false;
+  services.lvm.enable = false;
+
   system.stateVersion = "25.11";
 }
