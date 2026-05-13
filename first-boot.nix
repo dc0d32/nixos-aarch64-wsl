@@ -63,7 +63,7 @@ in
         WorkingDirectory = homeDir;
       };
 
-      path = [ pkgs.gitMinimal pkgs.openssh ];
+      path = [ pkgs.gitMinimal ];
 
       script = ''
         set -euo pipefail

@@ -72,5 +72,16 @@
   boot.kexec.enable = false;
   services.lvm.enable = false;
 
+  # bash-completion isn't needed on a one-shot bootstrap (~5 MiB).
+  programs.bash.completion.enable = false;
+
+  # The OpenSSH client is added to systemPackages by programs/ssh.nix
+  # unconditionally. We don't run sshd here (services.openssh.enable
+  # defaults to false), and the dotfiles repo brings its own ssh on
+  # first rebuild — so swap in a tiny stub (~7 MiB closure).
+  programs.ssh.package = pkgs.runCommandLocal "openssh-stub" { } ''
+    mkdir -p $out/bin
+  '';
+
   system.stateVersion = "25.11";
 }
