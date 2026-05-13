@@ -1,12 +1,33 @@
 # nixos-aarch64-wsl
 
-Minimal NixOS WSL2 image, no external dependencies beyond nixpkgs + home-manager.
+Minimal NixOS WSL2 module and bootstrap tarball builder.
 
-## Build
+This repo provides **only** the WSL compatibility layer — boot shims,
+`/etc/wsl.conf`, FHS symlinks, systemd services, and a tarball builder.
+All user-facing configuration (shell, editor, packages, home-manager)
+lives in [dc0d32/nixos](https://github.com/dc0d32/nixos).
+
+## Using as a NixOS module
+
+Add this flake as an input and import the module:
+
+```nix
+# In your flake.nix inputs:
+nixos-wsl.url = "github:dc0d32/nixos-aarch64-wsl";
+
+# In your nixosSystem modules:
+nixos-wsl.nixosModules.default
+{
+  wsl.enable = true;
+  wsl.defaultUser = "p";
+}
+```
+
+## Building a bootstrap tarball
 
 From an existing Linux system with Nix:
 
-```
+```bash
 # aarch64 (ARM64 Windows)
 sudo nix run .#nixosConfigurations.aarch64.config.system.build.tarballBuilder
 
@@ -16,25 +37,33 @@ sudo nix run .#nixosConfigurations.x86_64.config.system.build.tarballBuilder
 
 Produces `nixos.wsl` in the current directory.
 
-## Import
+## Importing into WSL
 
 ```powershell
 wsl --import NixOS $env:USERPROFILE\NixOS .\nixos.wsl
 wsl -d NixOS
 ```
 
-## After import
+## First-boot flow
 
-```
-git clone <this-repo> ~/nix
-cd ~/nix
-sudo nixos-rebuild switch --flake .#aarch64
-```
+The bootstrap tarball includes a one-shot systemd service that runs
+automatically on the first boot:
 
-Or use the alias: `nr` (rebuilds from `~/nix`).
+1. Clones `https://github.com/dc0d32/nixos.git` into `~/nixos`
+2. Runs `sudo nixos-rebuild switch --flake ~/nixos#<hostname>`
+3. Creates a marker file so it never runs again
 
-## What's included
+After first boot completes, the system is fully configured by the
+dotfiles repo. Subsequent updates use `nixos-rebuild switch` from
+`~/nixos`.
 
-**System:** git, curl, wget, gcc, gnumake, pkg-config, ripgrep, fd, htop, unzip
+## Module options
 
-**User (via home-manager):** zsh + starship, neovim (treesitter, telescope, lsp, completion), git, direnv
+| Option | Default | Description |
+|--------|---------|-------------|
+| `wsl.enable` | `false` | Enable WSL2 compatibility |
+| `wsl.defaultUser` | `"nixos"` | Default WSL user name |
+| `wsl.firstBoot.enable` | `false` | Enable first-boot provisioning |
+| `wsl.firstBoot.repo` | `https://github.com/dc0d32/nixos.git` | Dotfiles repo URL |
+| `wsl.firstBoot.clonePath` | `~/nixos` | Clone destination |
+| `wsl.firstBoot.flakeRef` | `<clonePath>#<hostname>` | Flake ref for rebuild |

@@ -1,37 +1,40 @@
 {
-  description = "Minimal NixOS WSL2 image";
+  description = "NixOS WSL2 module + bootstrap tarball builder";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    home-manager = {
-      url = "github:nix-community/home-manager";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
-  outputs = { self, nixpkgs, home-manager }:
+  outputs = { self, nixpkgs }:
     let
       defaultUser = "p";
 
-      mkSystem = system: nixpkgs.lib.nixosSystem {
+      # Minimal system for tarball building only — just enough to boot
+      # WSL and run the first-boot provisioning service.
+      mkBootstrapSystem = { system, hostName }: nixpkgs.lib.nixosSystem {
         inherit system;
-        specialArgs = { inherit defaultUser; };
         modules = [
-          ./wsl.nix
-          ./configuration.nix
-          home-manager.nixosModules.home-manager
+          self.nixosModules.default
+          ./bootstrap.nix
+          ./first-boot.nix
           {
-            home-manager.useGlobalPkgs = true;
-            home-manager.useUserPackages = true;
-            home-manager.users.${defaultUser} = import ./home.nix;
+            wsl.enable = true;
+            wsl.defaultUser = defaultUser;
+            wsl.firstBoot.enable = true;
+            networking.hostName = hostName;
+            nix.settings.trusted-users = [ "root" defaultUser ];
           }
         ];
       };
     in
     {
+      # Reusable NixOS module — import this from your own flake
+      nixosModules.default = ./wsl.nix;
+
+      # Bootstrap configurations — used to build the initial .wsl tarball
       nixosConfigurations = {
-        aarch64 = mkSystem "aarch64-linux";
-        x86_64 = mkSystem "x86_64-linux";
+        aarch64 = mkBootstrapSystem { system = "aarch64-linux"; hostName = "wsl-arm"; };
+        x86_64 = mkBootstrapSystem { system = "x86_64-linux"; hostName = "wsl"; };
       };
     };
 }
