@@ -151,11 +151,13 @@ let
     "$SYSTEM/activate" >>"$LOG" 2>&1 \
       || fail "activation script failed"
 
-    # Sanity check: activation should have rewired /sbin/init to the
-    # systemd binary. If not, the next boot will hang.
+    # Sanity check: activation should have rewired /sbin/init to a
+    # /nix/store target (currently a small wsl-systemd-shim, but
+    # historically the systemd binary itself). If it still points at
+    # the busybox in stage-0, the next boot will hang.
     init_target=$(readlink /sbin/init 2>/dev/null || echo missing)
     case "$init_target" in
-      */systemd) : ;;
+      /nix/store/*) : ;;
       *)
         fail "activation did not rewire /sbin/init (still: $init_target)"
         ;;

@@ -20,6 +20,63 @@ let
     export PATH="${lib.makeBinPath [ pkgs.systemd pkgs.gnugrep pkgs.coreutils ]}:$PATH"
     exec ${pkgs.bashInteractive}/bin/sh "$@"
   '';
+
+  # systemd-shim — runs as /sbin/init. WSL launches /sbin/init in the
+  # distro's mount namespace expecting it to be systemd, but systemd
+  # cannot start cleanly on a stock WSL rootfs:
+  #   * /dev/shm is a symlink to /run/shm (WSL convention). systemd
+  #     services with PrivateTmp=yes set up a private /tmp+/dev/shm
+  #     bind mount; the symlink confuses that and breaks mount
+  #     namespacing.
+  #   * / is mounted with private propagation. systemd's hardened
+  #     services (ProtectSystem, PrivateTmp, ProtectHome, …) need
+  #     to share mount events, which requires / to be rshared first.
+  #   * /nix/store is rw — should be ro for safety / matches NixOS
+  #     expectations.
+  # If any of these are wrong, hardened services hit weird ENOENT/
+  # EACCES failures (200/CHDIR cascade) during exec setup, the journal
+  # socket may itself fail, and systemd never reaches sd_notify(READY).
+  # WSL's WaitForBootProcess then times out after 10s and kills the
+  # distro. Fix: do all of the above BEFORE handing control to systemd.
+  #
+  # Pattern adopted from nix-community/NixOS-WSL (utils/src/shim.rs).
+  # Implemented in shell because the operations are simple and we
+  # avoid a Rust toolchain dep just for /sbin/init.
+  systemdShim = pkgs.writeShellScript "wsl-systemd-shim" ''
+    set -e
+
+    log() { echo "[wsl-systemd-shim] $*" > /dev/kmsg 2>/dev/null || true; }
+
+    # 1. Fix /dev/shm if it's still the WSL symlink.
+    if [ -L /dev/shm ]; then
+      log "unscrewing /dev/shm symlink"
+      rm -f /dev/shm
+      mkdir -p /dev/shm
+      ${pkgs.util-linux}/bin/mount --move /run/shm /dev/shm
+      ${pkgs.util-linux}/bin/mount --bind /dev/shm /run/shm
+    fi
+
+    # 2. Remount / shared+rec so systemd hardened-service mount
+    #    namespacing works.
+    log "remounting / shared (rec)"
+    ${pkgs.util-linux}/bin/mount --make-rshared /
+
+    # 3. Bind-mount /nix/store read-only.
+    log "remounting /nix/store ro"
+    ${pkgs.util-linux}/bin/mount --bind /nix/store /nix/store
+    ${pkgs.util-linux}/bin/mount -o remount,ro,bind /nix/store
+
+    # 4. Re-run activation (idempotent; matches upstream NixOS-WSL).
+    log "running activation"
+    /nix/var/nix/profiles/system/activate > /dev/kmsg 2>&1 || \
+      log "activation failed (continuing)"
+
+    # 5. Hand off to real systemd with kernel-log target so failures
+    #    are visible in dmesg even if journald is unhappy.
+    log "exec systemd"
+    exec -a "$0" /nix/var/nix/profiles/system/systemd/lib/systemd/systemd \
+      --log-target=kmsg "$@"
+  '';
 in
 {
   options.wsl = {
@@ -84,7 +141,9 @@ in
     system.activationScripts.setupFHS = lib.stringAfter [ "populateBin" ] ''
       echo "setting up FHS paths for WSL..."
       mkdir -p /sbin /usr/lib/systemd /usr/bin /etc/ld.so.conf.d
-      ln -sf ${pkgs.systemd}/lib/systemd/systemd /sbin/init
+      # /sbin/init is our shim, NOT systemd directly. See comment on
+      # `systemdShim` above for why.
+      ln -sf ${systemdShim} /sbin/init
       ln -sf ${pkgs.systemd}/lib/systemd/systemd /usr/lib/systemd/systemd
       ln -sf ${pkgs.systemd}/bin/systemctl /usr/bin/systemctl
       ln -sf ${ldconfigDummy} /sbin/ldconfig
@@ -95,28 +154,12 @@ in
       "L /run/current-system - - - - /nix/var/nix/profiles/system"
     ];
 
-    # Mount propagation and nix store protection
-    systemd.services.wsl-setup = {
-      description = "WSL2 NixOS mount setup";
-      wantedBy = [ "sysinit.target" ];
-      before = [ "sysinit.target" ];
-      unitConfig.DefaultDependencies = false;
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        ExecStart = pkgs.writeShellScript "wsl-setup" ''
-          if [ -L /dev/shm ]; then
-            rm -f /dev/shm
-            mkdir -p /dev/shm
-            ${pkgs.util-linux}/bin/mount --move /run/shm /dev/shm
-            ${pkgs.util-linux}/bin/mount --bind /dev/shm /run/shm
-          fi
-          ${pkgs.util-linux}/bin/mount --make-rshared /
-          ${pkgs.util-linux}/bin/mount --bind /nix/store /nix/store
-          ${pkgs.util-linux}/bin/mount -o remount,ro,bind /nix/store
-        '';
-      };
-    };
+    # NOTE: mount propagation, /dev/shm fix, and /nix/store ro
+    # bind-mount are handled by the systemd-shim BEFORE systemd
+    # starts (see `systemdShim` above). Doing it from a systemd unit
+    # is too late: hardened services start their own mount namespaces
+    # in parallel with sysinit.target and trip over the bad state
+    # before wsl-setup runs.
 
     # User
     users.users.${defaultUser} = {
