@@ -47,8 +47,7 @@
           hostName = if system == "aarch64-linux" then "wsl-arm" else "wsl";
         in {
           bootstrap-min = import ./bootstrap-min.nix {
-            inherit pkgs;
-            inherit defaultUser hostName;
+            inherit pkgs hostName;
           };
         });
     };

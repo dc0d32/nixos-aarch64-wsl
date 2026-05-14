@@ -15,14 +15,16 @@
 {
   pkgs,
   lib ? pkgs.lib,
-  defaultUser ? "p",
-  uid ? 1000,
+  # Flake to build on first boot. Override at boot time with the
+  # WSL_FLAKE_REF env var (see /etc/wsl-first-boot.sh).
   flake ? "github:dc0d32/nixos",
+  # Which `nixosConfigurations.<name>` attr to build. Override with
+  # WSL_HOSTNAME at boot time.
   hostName ? "wsl-arm",
 }:
 
 let
-  inherit (pkgs) runCommand stdenv;
+  inherit (pkgs) runCommand;
 
   # Static busybox (musl) — single 1.6 MiB binary with all the standard
   # applets. The default `pkgs.busybox` is dynamically linked against
@@ -183,26 +185,16 @@ let
     sandbox = false
   '';
 
+  # Stage-0 wsl.conf — only what's needed to:
+  #   1. Run our first-boot script
+  #   2. Tell WSL not to try to exec systemd (we have busybox init)
+  # Everything else (automount, interop, network, default user) is
+  # left at WSL's defaults. After first-boot completes, we replace
+  # this file with the dotfiles' /etc/wsl.conf which sets the rest.
   wslConf = ''
-    [automount]
-    enabled = true
-    options = "metadata,uid=${toString uid},gid=100"
-    root = /mnt
-
     [boot]
     command = /etc/wsl-first-boot.sh
     systemd = false
-
-    [interop]
-    appendWindowsPath = true
-    enabled = true
-
-    [network]
-    generateHosts = true
-    generateResolvConf = true
-
-    [user]
-    default = root
   '';
 
   # Common busybox applets we want guaranteed-present at well-known
