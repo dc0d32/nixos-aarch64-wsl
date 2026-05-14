@@ -166,18 +166,42 @@ let
     touch "$MARKER"
     rm -f "$INPROGRESS"
 
-    cat > /etc/motd <<'EOF'
+    # Locate the host's wsl.exe (interop+automount are on by default
+    # in stage-0's wsl.conf). If found, schedule an auto-terminate of
+    # JUST THIS DISTRO so the next launch picks up the new /sbin/init
+    # without disturbing other WSL distros (vs. `wsl --shutdown`).
+    WSL_EXE=""
+    for p in /mnt/c/Windows/System32/wsl.exe /mnt/c/WINDOWS/System32/wsl.exe; do
+      [ -x "$p" ] && WSL_EXE=$p && break
+    done
+    DISTRO=''${WSL_DISTRO_NAME:-}
 
-    ===================================================
-      Stage-0 bootstrap complete.
-      From a Windows shell, run:    wsl --shutdown
-      Then re-launch this distro to enter full NixOS.
-    ===================================================
-
-    EOF
+    {
+      echo ""
+      echo "==================================================="
+      echo "  Stage-0 bootstrap complete."
+      if [ -n "$WSL_EXE" ] && [ -n "$DISTRO" ]; then
+        echo "  Auto-terminating this distro in 3s; re-launch"
+        echo "  with:    wsl -d $DISTRO"
+      else
+        echo "  Run from Windows:    wsl --terminate ''${DISTRO:-<distro>}"
+        echo "  Then:                wsl -d ''${DISTRO:-<distro>}"
+      fi
+      echo "==================================================="
+      echo ""
+    } > /etc/motd
 
     log "=== first-boot complete ==="
     cat /etc/motd >/dev/console 2>/dev/null || cat /etc/motd
+
+    if [ -n "$WSL_EXE" ] && [ -n "$DISTRO" ]; then
+      log "Auto-terminating distro \"$DISTRO\" so next launch uses the new init..."
+      sleep 1  # let log flush to any tail -f sessions
+      # wsl.exe --terminate kills our process mid-call; we don't need
+      # to return. If it somehow fails, fall through to log the error.
+      "$WSL_EXE" --terminate "$DISTRO" >/dev/null 2>&1 || \
+        log "WARNING: auto-terminate failed; run 'wsl --terminate $DISTRO' from Windows."
+    fi
   '';
 
   # /etc/passwd: just root. Default user is created by the real NixOS
