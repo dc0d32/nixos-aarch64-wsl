@@ -124,7 +124,7 @@ let
     SYSTEM=$(nix \
       --extra-experimental-features 'nix-command flakes' \
       --log-format raw \
-      build --no-link --print-out-paths "$ATTR" 2>>"$LOG") \
+      build --no-link --print-out-paths --refresh "$ATTR" 2>>"$LOG") \
       || fail "nix build failed"
 
     log "Built system: $SYSTEM"
