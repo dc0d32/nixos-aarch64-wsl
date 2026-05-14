@@ -303,16 +303,18 @@ runCommand "nixos-wsl-bootstrap-min-${pkgs.stdenv.hostPlatform.system}.tar.gz"
     # switch-to-configuration checks for /etc/NIXOS in some branches.
     touch etc/NIXOS
 
-    # /etc/profile — runs for any login shell. If first-boot is in
-    # progress or hasn't completed, give the user a useful message
-    # rather than a bare # prompt.
+    # /etc/profile — runs for any login shell. While first-boot is
+    # in progress, exec straight into `tail -f` so the user sees live
+    # build progress instead of an unhelpful root prompt. ^C drops
+    # them out (which exits the WSL session — they relaunch after
+    # `wsl --terminate` anyway, to pick up the new /sbin/init).
     cat > etc/profile <<'EOF'
     export PATH=/usr/local/bin:/bin:/sbin
     if [ -e /var/lib/wsl-first-boot-in-progress ]; then
       echo
-      echo "  *** WSL stage-0 first-boot is still in progress. ***"
-      echo "  Tail the log with:  tail -f /var/log/wsl-first-boot.log"
+      echo "  *** WSL stage-0 first-boot is in progress; tailing log (Ctrl+C to exit). ***"
       echo
+      exec tail -f /var/log/wsl-first-boot.log
     elif [ ! -e /var/lib/wsl-first-boot-done ]; then
       echo
       echo "  *** First-boot has not run yet. To trigger manually: ***"
