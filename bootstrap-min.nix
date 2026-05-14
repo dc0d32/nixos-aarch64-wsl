@@ -246,6 +246,14 @@ runCommand "nixos-wsl-bootstrap-min-${pkgs.stdenv.hostPlatform.system}.tar.gz"
     root=$(mktemp -d)
     cd "$root"
 
+    # `mktemp -d` creates the dir with 0700. After extraction this
+    # becomes "/" inside the WSL distro and would mean ONLY root can
+    # traverse `/`, which causes every non-root systemd service to
+    # fail with status=200/CHDIR ("cd /" denied) and journald-socket
+    # EACCES (can't traverse / to reach /run/systemd/journal/stdout).
+    # Standard "/" is 0755.
+    chmod 0755 "$root"
+
     mkdir -p bin sbin etc etc/nix usr/local/bin var var/lib var/log \
              root tmp dev proc sys run mnt home \
              nix nix/store nix/var nix/var/nix nix/var/nix/db \
