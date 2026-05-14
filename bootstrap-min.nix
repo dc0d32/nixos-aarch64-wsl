@@ -110,12 +110,12 @@ let
       cat > /etc/nix/nix.conf <<EOF
     experimental-features = nix-command flakes
     build-users-group =
-    sandbox = false
+    sandbox = true
     EOF
     fi
 
-    FLAKE="$${WSL_FLAKE_REF:-${flake}}"
-    HOST="$${WSL_HOSTNAME:-${hostName}}"
+    FLAKE="''${WSL_FLAKE_REF:-${flake}}"
+    HOST="''${WSL_HOSTNAME:-${hostName}}"
     ATTR="$FLAKE#nixosConfigurations.$HOST.config.system.build.toplevel"
 
     log "Building $ATTR..."
@@ -135,20 +135,31 @@ let
     mkdir -p /run
     ln -sfn /nix/var/nix/profiles/system /run/current-system
 
-    # Wire systemd in for the next boot. WSL execs /sbin/init when
-    # boot.systemd is true; the new NixOS system's /init handles
-    # NixOS-stage2 + systemd properly.
-    mkdir -p /sbin
-    ln -sfn "$SYSTEM/init" /sbin/init
+    # Run full activation. Doing this in stage-0 (rather than waiting
+    # for the next boot to do it) is essential: WSL launches /sbin/init
+    # expecting it to be the systemd binary, but the freshly built
+    # rootfs still has /sbin/init → busybox. The activation script
+    # (chain of all system.activationScripts.*) rewires /sbin/init,
+    # /bin/sh, /bin/bash, sets up /etc, creates users, etc.
+    #
+    # We call $SYSTEM/activate directly rather than 'switch-to-configuration
+    # boot' — the new Rust switch-to-configuration's 'boot' action only
+    # updates the bootloader, not activation (the perl version did
+    # both). 'switch' would also try to start systemd services, which
+    # is wrong when no systemd is running.
+    log "Running activation ($SYSTEM/activate)..."
+    "$SYSTEM/activate" >>"$LOG" 2>&1 \
+      || fail "activation script failed"
 
-    # Replace stage-0 /etc/wsl.conf with the dotfiles' one (enables
-    # boot.systemd, sets default user, etc.).
-    if [ -f "$SYSTEM/etc/wsl.conf" ]; then
-      cp -f "$SYSTEM/etc/wsl.conf" /etc/wsl.conf
-      log "Updated /etc/wsl.conf from new system."
-    else
-      log "WARNING: $SYSTEM has no /etc/wsl.conf — boot.systemd may not be enabled."
-    fi
+    # Sanity check: activation should have rewired /sbin/init to the
+    # systemd binary. If not, the next boot will hang.
+    init_target=$(readlink /sbin/init 2>/dev/null || echo missing)
+    case "$init_target" in
+      */systemd) : ;;
+      *)
+        fail "activation did not rewire /sbin/init (still: $init_target)"
+        ;;
+    esac
 
     touch "$MARKER"
     rm -f "$INPROGRESS"
@@ -182,7 +193,15 @@ let
   nixConf = ''
     experimental-features = nix-command flakes
     build-users-group =
-    sandbox = false
+    sandbox = true
+  '';
+
+  # Minimum os-release that NixOS's switch-to-configuration-ng accepts.
+  # The full release file will be installed by the activation script.
+  osRelease = ''
+    NAME="NixOS WSL bootstrap"
+    ID=nixos
+    PRETTY_NAME="NixOS WSL stage-0 bootstrap"
   '';
 
   # Stage-0 wsl.conf — only what's needed to:
@@ -266,6 +285,13 @@ runCommand "nixos-wsl-bootstrap-min-${pkgs.stdenv.hostPlatform.system}.tar.gz"
 
     cat > etc/wsl.conf <<'EOF'
     ${wslConf}EOF
+
+    cat > etc/os-release <<'EOF'
+    ${osRelease}EOF
+
+    # Marker file: indicates this rootfs is (or will become) NixOS.
+    # switch-to-configuration checks for /etc/NIXOS in some branches.
+    touch etc/NIXOS
 
     # /etc/profile — runs for any login shell. If first-boot is in
     # progress or hasn't completed, give the user a useful message
