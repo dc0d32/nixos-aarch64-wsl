@@ -36,5 +36,20 @@
         aarch64 = mkBootstrapSystem { system = "aarch64-linux"; hostName = "wsl-arm"; };
         x86_64 = mkBootstrapSystem { system = "x86_64-linux"; hostName = "wsl"; };
       };
+
+      # Experimental "stage-0" tarball — a hand-rolled non-NixOS rootfs
+      # of busybox + static nix that fetches and activates the dotfiles
+      # config on first boot. Result is ~10-15 MiB compressed vs.
+      # ~358 MiB for the full NixOS bootstrap.
+      packages = nixpkgs.lib.genAttrs [ "aarch64-linux" "x86_64-linux" ] (system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          hostName = if system == "aarch64-linux" then "wsl-arm" else "wsl";
+        in {
+          bootstrap-min = import ./bootstrap-min.nix {
+            inherit pkgs;
+            inherit defaultUser hostName;
+          };
+        });
     };
 }

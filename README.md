@@ -25,12 +25,38 @@ nixos-wsl.nixosModules.default
 
 ## Building a bootstrap tarball
 
-From an existing Linux system with Nix:
+Two flavours, depending on how lean you want the initial download:
+
+### Stage-0 minimal (~14 MiB compressed) — recommended
+
+A hand-rolled non-NixOS rootfs of just `busybox` (static) + `nix`
+(static) + a CA bundle + a one-shot first-boot script. On first launch
+it fetches and activates the dotfiles' real NixOS system from
+`cache.nixos.org`, then prompts you to `wsl --shutdown` so the new
+systemd-based system can take over.
+
+```bash
+# aarch64
+nix build .#packages.aarch64-linux.bootstrap-min
+# x86_64
+nix build .#packages.x86_64-linux.bootstrap-min
+# Result is at ./result — already a .tar.gz, ready for `wsl --import`.
+```
+
+Trade-off: ~25× smaller download, but the bootstrap is a one-shot
+hand-built rootfs (no NixOS until after first reboot). Override the
+flake/host at boot time via `WSL_FLAKE_REF` / `WSL_HOSTNAME` env in
+`/etc/wsl-first-boot.sh`.
+
+### Full NixOS bootstrap (~358 MiB compressed)
+
+A complete (if minimal) NixOS-with-systemd image; first-boot is a
+systemd service that clones the dotfiles repo over git+HTTPS and runs
+`switch-to-configuration switch`.
 
 ```bash
 # aarch64 (ARM64 Windows)
 sudo nix run .#nixosConfigurations.aarch64.config.system.build.tarballBuilder
-
 # x86_64
 sudo nix run .#nixosConfigurations.x86_64.config.system.build.tarballBuilder
 ```
@@ -40,22 +66,44 @@ Produces `nixos.wsl` in the current directory.
 ## Importing into WSL
 
 ```powershell
-wsl --import NixOS $env:USERPROFILE\NixOS .\nixos.wsl
+wsl --import NixOS $env:USERPROFILE\NixOS .\result
+# (or .\nixos.wsl for the full bootstrap)
 wsl -d NixOS
 ```
 
 ## First-boot flow
 
-The bootstrap tarball includes a one-shot systemd service that runs
-automatically on the first boot:
+### Stage-0 minimal
 
-1. Clones `https://github.com/dc0d32/nixos.git` into `~/nixos`
-2. Runs `sudo nixos-rebuild switch --flake ~/nixos#<hostname>`
-3. Creates a marker file so it never runs again
+WSL runs `/etc/wsl-first-boot.sh` once via `[boot] command` in
+`/etc/wsl.conf`:
 
-After first boot completes, the system is fully configured by the
-dotfiles repo. Subsequent updates use `nixos-rebuild switch` from
-`~/nixos`.
+1. Initialises a fresh `/nix/store`
+2. `nix build github:dc0d32/nixos#nixosConfigurations.<host>.config.system.build.toplevel`
+3. Sets the system profile, points `/run/current-system` and
+   `/sbin/init` at the new system, copies the new `/etc/wsl.conf`
+   (which has `boot.systemd = true`)
+4. Touches `/var/lib/wsl-first-boot-done` and prompts the user to
+   `wsl --shutdown`
+5. After the user re-launches, WSL execs `/sbin/init` → full systemd
+   NixOS
+
+If anything goes wrong, the script writes to
+`/var/log/wsl-first-boot.log` and leaves a sticky note in
+`/etc/profile`; just re-run `/etc/wsl-first-boot.sh` after fixing.
+
+### Full NixOS bootstrap
+
+A two-phase systemd oneshot:
+
+1. `wsl-first-boot-clone.service` (as the default user) clones
+   `https://github.com/dc0d32/nixos.git` into `~/nixos`
+2. `wsl-first-boot-rebuild.service` (as root) does
+   `nix build` + `nix-env --set` + `switch-to-configuration switch`
+3. Marker file at `~/.wsl-first-boot-done` prevents re-runs
+
+After first boot, subsequent updates use the dotfiles repo's preferred
+workflow (`nixos-rebuild switch` etc.).
 
 ## Module options
 
